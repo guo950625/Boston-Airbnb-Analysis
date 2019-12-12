@@ -1,0 +1,2038 @@
+{
+ "cells": [
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import pandas as pd\n",
+    "import numpy as np\n",
+    "import re\n",
+    "from re import sub\n",
+    "import multiprocessing\n",
+    "\n",
+    "from gensim.models.phrases import Phrases, Phraser\n",
+    "from gensim.models import Word2Vec\n",
+    "from sklearn.cluster import KMeans\n",
+    "\n",
+    "from time import time "
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Data Processing"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 50,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "reviews= pd.read_csv('reviews.csv')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 51,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>listing_id</th>\n",
+       "      <th>id</th>\n",
+       "      <th>date</th>\n",
+       "      <th>reviewer_id</th>\n",
+       "      <th>reviewer_name</th>\n",
+       "      <th>comments</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>4724140</td>\n",
+       "      <td>2013-05-21</td>\n",
+       "      <td>4298113</td>\n",
+       "      <td>Olivier</td>\n",
+       "      <td>My stay at islam's place was really cool! Good...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>4869189</td>\n",
+       "      <td>2013-05-29</td>\n",
+       "      <td>6452964</td>\n",
+       "      <td>Charlotte</td>\n",
+       "      <td>Great location for both airport and city - gre...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>5003196</td>\n",
+       "      <td>2013-06-06</td>\n",
+       "      <td>6449554</td>\n",
+       "      <td>Sebastian</td>\n",
+       "      <td>We really enjoyed our stay at Islams house. Fr...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>5150351</td>\n",
+       "      <td>2013-06-15</td>\n",
+       "      <td>2215611</td>\n",
+       "      <td>Marine</td>\n",
+       "      <td>The room was nice and clean and so were the co...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>5171140</td>\n",
+       "      <td>2013-06-16</td>\n",
+       "      <td>6848427</td>\n",
+       "      <td>Andrew</td>\n",
+       "      <td>Great location. Just 5 mins walk from the Airp...</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   listing_id       id        date  reviewer_id reviewer_name  \\\n",
+       "0     1178162  4724140  2013-05-21      4298113       Olivier   \n",
+       "1     1178162  4869189  2013-05-29      6452964     Charlotte   \n",
+       "2     1178162  5003196  2013-06-06      6449554     Sebastian   \n",
+       "3     1178162  5150351  2013-06-15      2215611        Marine   \n",
+       "4     1178162  5171140  2013-06-16      6848427        Andrew   \n",
+       "\n",
+       "                                            comments  \n",
+       "0  My stay at islam's place was really cool! Good...  \n",
+       "1  Great location for both airport and city - gre...  \n",
+       "2  We really enjoyed our stay at Islams house. Fr...  \n",
+       "3  The room was nice and clean and so were the co...  \n",
+       "4  Great location. Just 5 mins walk from the Airp...  "
+      ]
+     },
+     "execution_count": 51,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "reviews.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 52,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def text_to_word_list(text):\n",
+    "    text = str(text)\n",
+    "    text = text.lower()\n",
+    "\n",
+    "    # Clean the text\n",
+    "    text = sub(r\"[^A-Za-z0-9^,!?.\\/'+]\", \" \", text)\n",
+    "    text = sub(r\"\\+\", \" plus \", text)\n",
+    "    text = sub(r\",\", \" \", text)\n",
+    "    text = sub(r\"\\.\", \" \", text)\n",
+    "    text = sub(r\"!\", \" ! \", text)\n",
+    "    text = sub(r\"\\?\", \" ? \", text)\n",
+    "    text = sub(r\"'\", \" \", text)\n",
+    "    text = sub(r\":\", \" : \", text)\n",
+    "    text = sub(r\"\\s{2,}\", \" \", text)\n",
+    "\n",
+    "    text = text.split()\n",
+    "\n",
+    "    return text  "
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 53,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "reviews.drop(['reviewer_name','date'], axis=1,inplace=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 54,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "reviews.comments = reviews.comments.apply(lambda x: text_to_word_list(x))"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Word2Vec"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 55,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "reviews_model = reviews.copy()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 56,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "reviews_model = reviews_model[reviews_model.comments.str.len()>1]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 57,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "['great',\n",
+       " 'location',\n",
+       " 'for',\n",
+       " 'both',\n",
+       " 'airport',\n",
+       " 'and',\n",
+       " 'city',\n",
+       " 'great',\n",
+       " 'amenities',\n",
+       " 'in',\n",
+       " 'the',\n",
+       " 'house',\n",
+       " 'plus',\n",
+       " 'islam',\n",
+       " 'was',\n",
+       " 'always',\n",
+       " 'very',\n",
+       " 'helpful',\n",
+       " 'even_though',\n",
+       " 'he',\n",
+       " 'was',\n",
+       " 'away']"
+      ]
+     },
+     "execution_count": 57,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "sent = [row for row in reviews_model.comments]\n",
+    "phrases = Phrases(sent, min_count=1, progress_per=50000)\n",
+    "bigram = Phraser(phrases)\n",
+    "sentences = bigram[sent]\n",
+    "sentences[1]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 58,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Time to build vocab: 0.27 mins\n"
+     ]
+    }
+   ],
+   "source": [
+    "w2v_model = Word2Vec(min_count=3,\n",
+    "                     window=4,\n",
+    "                     size=300,\n",
+    "                     sample=1e-5, \n",
+    "                     alpha=0.03, \n",
+    "                     min_alpha=0.0007, \n",
+    "                     negative=20,\n",
+    "                     workers=multiprocessing.cpu_count()-1)\n",
+    "start = time()\n",
+    "\n",
+    "w2v_model.build_vocab(sentences, progress_per=50000)\n",
+    "\n",
+    "print('Time to build vocab: {} mins'.format(round((time() - start) / 60, 2)))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 62,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Time to train the model: 5.89 mins\n"
+     ]
+    }
+   ],
+   "source": [
+    "start = time()\n",
+    "\n",
+    "w2v_model.train(sentences, total_examples=w2v_model.corpus_count, epochs=30, report_delay=1)\n",
+    "\n",
+    "print('Time to train the model: {} mins'.format(round((time() - start) / 60, 2)))\n",
+    "\n",
+    "w2v_model.init_sims(replace=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 63,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "w2v_model.save(\"word2vec.model\")"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## K-means Clustering"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 64,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "word_vectors = Word2Vec.load('word2vec.model').wv"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 65,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "model = KMeans(n_clusters=2, max_iter=1000, random_state=True, n_init=50).fit(X=word_vectors.vectors)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 66,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "[('serious_cleaning', 0.8859721422195435),\n",
+       " ('touristy_spots', 0.8813823461532593),\n",
+       " ('maintained_daily', 0.879956841468811),\n",
+       " ('jazmyne', 0.8755927681922913),\n",
+       " ('margarita', 0.875381350517273),\n",
+       " ('square_footage', 0.8750718832015991),\n",
+       " ('aiming', 0.8669908046722412),\n",
+       " ('becouse', 0.8666425347328186),\n",
+       " ('quick_stopover', 0.8605995178222656),\n",
+       " ('go_freely', 0.8604874610900879)]"
+      ]
+     },
+     "execution_count": 66,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "word_vectors.similar_by_vector(model.cluster_centers_[0], topn=10, restrict_vocab=None)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 67,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "positive_cluster_center = model.cluster_centers_[0]\n",
+    "negative_cluster_center = model.cluster_centers_[1]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 68,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stderr",
+     "output_type": "stream",
+     "text": [
+      "/anaconda3/lib/python3.6/site-packages/ipykernel_launcher.py:3: DeprecationWarning: Call to deprecated `wv` (Attribute will be removed in 4.0.0, use self instead).\n",
+      "  This is separate from the ipykernel package so we can avoid doing imports until\n"
+     ]
+    }
+   ],
+   "source": [
+    "words = pd.DataFrame(word_vectors.vocab.keys())\n",
+    "words.columns = ['words']\n",
+    "words['vectors'] = words.words.apply(lambda x: word_vectors.wv[f'{x}'])\n",
+    "words['cluster'] = words.vectors.apply(lambda x: model.predict([np.array(x)]))\n",
+    "words.cluster = words.cluster.apply(lambda x: x[0])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 69,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "words['cluster_value'] = [1 if i==0 else -1 for i in words.cluster]\n",
+    "words['closeness_score'] = words.apply(lambda x: 1/(model.transform([x.vectors]).min()), axis=1)\n",
+    "words['sentiment_coeff'] = words.closeness_score * words.cluster_value"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 70,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "words[['words', 'sentiment_coeff']].to_csv('sentiment_dictionary.csv', index=False)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 71,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "from sklearn.feature_extraction.text import TfidfVectorizer"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 72,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "sentiment_map = pd.read_csv('sentiment_dictionary.csv')\n",
+    "sentiment_dict = dict(zip(sentiment_map.words.values, sentiment_map.sentiment_coeff.values))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 73,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "reviews_output = reviews_model.copy()\n",
+    "reviews_output.comments = reviews_output.comments.apply(lambda x: ' '.join(bigram[x]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 74,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>listing_id</th>\n",
+       "      <th>id</th>\n",
+       "      <th>reviewer_id</th>\n",
+       "      <th>comments</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>4724140</td>\n",
+       "      <td>4298113</td>\n",
+       "      <td>my stay at islam s place was really cool ! goo...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>4869189</td>\n",
+       "      <td>6452964</td>\n",
+       "      <td>great location for both airport and city great...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>5003196</td>\n",
+       "      <td>6449554</td>\n",
+       "      <td>we really_enjoyed our stay at_islams house fro...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>5150351</td>\n",
+       "      <td>2215611</td>\n",
+       "      <td>the room was nice and clean and so were the co...</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>5171140</td>\n",
+       "      <td>6848427</td>\n",
+       "      <td>great location just 5_mins walk from the airpo...</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   listing_id       id  reviewer_id  \\\n",
+       "0     1178162  4724140      4298113   \n",
+       "1     1178162  4869189      6452964   \n",
+       "2     1178162  5003196      6449554   \n",
+       "3     1178162  5150351      2215611   \n",
+       "4     1178162  5171140      6848427   \n",
+       "\n",
+       "                                            comments  \n",
+       "0  my stay at islam s place was really cool ! goo...  \n",
+       "1  great location for both airport and city great...  \n",
+       "2  we really_enjoyed our stay at_islams house fro...  \n",
+       "3  the room was nice and clean and so were the co...  \n",
+       "4  great location just 5_mins walk from the airpo...  "
+      ]
+     },
+     "execution_count": 74,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "reviews_output.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 75,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "reviews_output.to_csv('review_last.csv',index=False)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Prediction"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 76,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "final_file = pd.read_csv('review_last.csv')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 77,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "tfidf = TfidfVectorizer(tokenizer=lambda y: y.split(), norm=None)\n",
+    "tfidf.fit(final_file.comments)\n",
+    "features = pd.Series(tfidf.get_feature_names())\n",
+    "transformed = tfidf.transform(final_file.comments)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 78,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def create_tfidf_dictionary(x, transformed_file, features):\n",
+    "    '''\n",
+    "    create dictionary for each input sentence x, where each word has assigned its tfidf score\n",
+    "    \n",
+    "    inspired  by function from this wonderful article: \n",
+    "    https://medium.com/analytics-vidhya/automated-keyword-extraction-from-articles-using-nlp-bfd864f41b34\n",
+    "    \n",
+    "    x - row of dataframe, containing sentences, and their indexes,\n",
+    "    transformed_file - all sentences transformed with TfidfVectorizer\n",
+    "    features - names of all words in corpus used in TfidfVectorizer\n",
+    "\n",
+    "    '''\n",
+    "    vector_coo = transformed_file[x.name].tocoo()\n",
+    "    vector_coo.col = features.iloc[vector_coo.col].values\n",
+    "    dict_from_coo = dict(zip(vector_coo.col, vector_coo.data))\n",
+    "    return dict_from_coo\n",
+    "\n",
+    "def replace_tfidf_words(x, transformed_file, features):\n",
+    "    '''\n",
+    "    replacing each word with it's calculated tfidf dictionary with scores of each word\n",
+    "    x - row of dataframe, containing sentences, and their indexes,\n",
+    "    transformed_file - all sentences transformed with TfidfVectorizer\n",
+    "    features - names of all words in corpus used in TfidfVectorizer\n",
+    "    '''\n",
+    "    dictionary = create_tfidf_dictionary(x, transformed_file, features)   \n",
+    "    return list(map(lambda y:dictionary[f'{y}'], x.comments.split()))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 79,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [],
+   "source": [
+    "replaced_tfidf_scores = final_file.apply(lambda x: replace_tfidf_words(x, transformed, features), axis=1)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 80,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def replace_sentiment_words(word, sentiment_dict):\n",
+    "    '''\n",
+    "    replacing each word with its associated sentiment score from sentiment dict\n",
+    "    '''\n",
+    "    try:\n",
+    "        out = sentiment_dict[word]\n",
+    "    except KeyError:\n",
+    "        out = 0\n",
+    "    return out"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 81,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "replaced_closeness_scores = final_file.comments.apply(lambda x: list(map(lambda y: replace_sentiment_words(y, sentiment_dict), x.split())))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 82,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "replacement_df = pd.DataFrame(data=[final_file.listing_id,final_file.id,final_file.reviewer_id,final_file.comments,replaced_closeness_scores, replaced_tfidf_scores ]).T\n",
+    "replacement_df.columns = ['listing_id','id','reviewer_id','comments','sentiment_coeff', 'tfidf_scores']\n",
+    "replacement_df['sentiment_rate'] = replacement_df.apply(lambda x: np.array(x.loc['sentiment_coeff']) @ np.array(x.loc['tfidf_scores']), axis=1)\n",
+    "replacement_df['prediction'] = (replacement_df.sentiment_rate>0).astype('int8')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 83,
+   "metadata": {
+    "scrolled": true
+   },
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>listing_id</th>\n",
+       "      <th>id</th>\n",
+       "      <th>reviewer_id</th>\n",
+       "      <th>comments</th>\n",
+       "      <th>sentiment_coeff</th>\n",
+       "      <th>tfidf_scores</th>\n",
+       "      <th>sentiment_rate</th>\n",
+       "      <th>prediction</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>4724140</td>\n",
+       "      <td>4298113</td>\n",
+       "      <td>my stay at islam s place was really cool ! goo...</td>\n",
+       "      <td>[1.0337125022087763, 1.082421966999573, 1.0456...</td>\n",
+       "      <td>[2.739815972569313, 1.9027477633752095, 2.3949...</td>\n",
+       "      <td>221.928332</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>4869189</td>\n",
+       "      <td>6452964</td>\n",
+       "      <td>great location for both airport and city great...</td>\n",
+       "      <td>[1.0548826082965892, 1.0478655139351276, 1.048...</td>\n",
+       "      <td>[3.663483429427597, 2.1612853767894076, 1.8429...</td>\n",
+       "      <td>78.096883</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>5003196</td>\n",
+       "      <td>6449554</td>\n",
+       "      <td>we really_enjoyed our stay at_islams house fro...</td>\n",
+       "      <td>[1.0387367460304435, 1.0662849657623812, 1.029...</td>\n",
+       "      <td>[3.856259860314039, 4.848497120190661, 4.93764...</td>\n",
+       "      <td>423.292134</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>5150351</td>\n",
+       "      <td>2215611</td>\n",
+       "      <td>the room was nice and clean and so were the co...</td>\n",
+       "      <td>[1.0450771403570074, 1.042101691305315, 1.0659...</td>\n",
+       "      <td>[3.69634184583942, 2.524888895273744, 1.361725...</td>\n",
+       "      <td>142.634225</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>5171140</td>\n",
+       "      <td>6848427</td>\n",
+       "      <td>great location just 5_mins walk from the airpo...</td>\n",
+       "      <td>[1.0548826082965892, 1.0478655139351276, 1.026...</td>\n",
+       "      <td>[1.8317417147137984, 2.1612853767894076, 6.154...</td>\n",
+       "      <td>78.088891</td>\n",
+       "      <td>1</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "  listing_id       id reviewer_id  \\\n",
+       "0    1178162  4724140     4298113   \n",
+       "1    1178162  4869189     6452964   \n",
+       "2    1178162  5003196     6449554   \n",
+       "3    1178162  5150351     2215611   \n",
+       "4    1178162  5171140     6848427   \n",
+       "\n",
+       "                                            comments  \\\n",
+       "0  my stay at islam s place was really cool ! goo...   \n",
+       "1  great location for both airport and city great...   \n",
+       "2  we really_enjoyed our stay at_islams house fro...   \n",
+       "3  the room was nice and clean and so were the co...   \n",
+       "4  great location just 5_mins walk from the airpo...   \n",
+       "\n",
+       "                                     sentiment_coeff  \\\n",
+       "0  [1.0337125022087763, 1.082421966999573, 1.0456...   \n",
+       "1  [1.0548826082965892, 1.0478655139351276, 1.048...   \n",
+       "2  [1.0387367460304435, 1.0662849657623812, 1.029...   \n",
+       "3  [1.0450771403570074, 1.042101691305315, 1.0659...   \n",
+       "4  [1.0548826082965892, 1.0478655139351276, 1.026...   \n",
+       "\n",
+       "                                        tfidf_scores  sentiment_rate  \\\n",
+       "0  [2.739815972569313, 1.9027477633752095, 2.3949...      221.928332   \n",
+       "1  [3.663483429427597, 2.1612853767894076, 1.8429...       78.096883   \n",
+       "2  [3.856259860314039, 4.848497120190661, 4.93764...      423.292134   \n",
+       "3  [3.69634184583942, 2.524888895273744, 1.361725...      142.634225   \n",
+       "4  [1.8317417147137984, 2.1612853767894076, 6.154...       78.088891   \n",
+       "\n",
+       "   prediction  \n",
+       "0           1  \n",
+       "1           1  \n",
+       "2           1  \n",
+       "3           1  \n",
+       "4           1  "
+      ]
+     },
+     "execution_count": 83,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "replacement_df.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 84,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# replacement_df.to_csv('UnsupervisedSentimentAnalysis.csv')"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## User-based collaborative recommendation"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 308,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>listing_id</th>\n",
+       "      <th>reviewer_id</th>\n",
+       "      <th>sentiment_rate</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>4298113</td>\n",
+       "      <td>221.928332</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>6452964</td>\n",
+       "      <td>78.096883</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>6449554</td>\n",
+       "      <td>423.292134</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>2215611</td>\n",
+       "      <td>142.634225</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>1178162</td>\n",
+       "      <td>6848427</td>\n",
+       "      <td>78.088891</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "  listing_id reviewer_id  sentiment_rate\n",
+       "0    1178162     4298113      221.928332\n",
+       "1    1178162     6452964       78.096883\n",
+       "2    1178162     6449554      423.292134\n",
+       "3    1178162     2215611      142.634225\n",
+       "4    1178162     6848427       78.088891"
+      ]
+     },
+     "execution_count": 308,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "review_score = replacement_df.copy(deep = True)\n",
+    "review_score  = review_score[['listing_id','reviewer_id','sentiment_rate']]\n",
+    "review_score.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 309,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "2827"
+      ]
+     },
+     "execution_count": 309,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "listing_id = review_score['listing_id'].drop_duplicates()\n",
+    "len(listing_id)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 310,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "63367"
+      ]
+     },
+     "execution_count": 310,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "user_id = review_score['reviewer_id'].drop_duplicates()\n",
+    "len(user_id)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Because ther are too many users and properties in our review_score table, so we just choose those user who has more than 5 records in the dataset, otherwise the data might be too sparse."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 312,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>reviewer_id</th>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>reviewer_id</th>\n",
+       "      <th></th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>51538</th>\n",
+       "      <td>10</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>114538</th>\n",
+       "      <td>6</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1089634</th>\n",
+       "      <td>11</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1399007</th>\n",
+       "      <td>6</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1695789</th>\n",
+       "      <td>8</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "             reviewer_id\n",
+       "reviewer_id             \n",
+       "51538                 10\n",
+       "114538                 6\n",
+       "1089634               11\n",
+       "1399007                6\n",
+       "1695789                8"
+      ]
+     },
+     "execution_count": 312,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# find users who has more than 5 reviews\n",
+    "a = review_score.groupby('reviewer_id').agg({'reviewer_id':'count'})\n",
+    "a = a[a['reviewer_id']>5]\n",
+    "a.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 313,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# get these users's data in review_score table\n",
+    "users = a.index\n",
+    "df = pd.DataFrame()\n",
+    "for i in range (0,67):\n",
+    "    r = review_score[review_score['reviewer_id']== users[i]]\n",
+    "    df = pd.concat([df,r], ignore_index = True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 314,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "(628, 3)"
+      ]
+     },
+     "execution_count": 314,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "review_score = df.copy(deep = True)\n",
+    "review_score.shape"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 315,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "278"
+      ]
+     },
+     "execution_count": 315,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "listing_id = review_score['listing_id'].drop_duplicates()\n",
+    "len(listing_id)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 316,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "67"
+      ]
+     },
+     "execution_count": 316,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "user_id = review_score['reviewer_id'].drop_duplicates()\n",
+    "len(user_id)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 317,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th>listing_id</th>\n",
+       "      <th>5729845</th>\n",
+       "      <th>4000384</th>\n",
+       "      <th>6513924</th>\n",
+       "      <th>4331214</th>\n",
+       "      <th>3392423</th>\n",
+       "      <th>3693850</th>\n",
+       "      <th>31796</th>\n",
+       "      <th>1544702</th>\n",
+       "      <th>1391215</th>\n",
+       "      <th>4090224</th>\n",
+       "      <th>...</th>\n",
+       "      <th>7181950</th>\n",
+       "      <th>11223924</th>\n",
+       "      <th>6134145</th>\n",
+       "      <th>2898226</th>\n",
+       "      <th>4573388</th>\n",
+       "      <th>14843783</th>\n",
+       "      <th>3615760</th>\n",
+       "      <th>7086825</th>\n",
+       "      <th>7880828</th>\n",
+       "      <th>2843445</th>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>reviewer_id</th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>51538</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>114538</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1089634</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1399007</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1695789</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "<p>5 rows × 278 columns</p>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "listing_id   5729845   4000384   6513924   4331214   3392423   3693850   \\\n",
+       "reviewer_id                                                               \n",
+       "51538             0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "114538            0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "1089634           0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "1399007           0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "1695789           0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "\n",
+       "listing_id   31796     1544702   1391215   4090224   ...  7181950   11223924  \\\n",
+       "reviewer_id                                          ...                       \n",
+       "51538             0.0       0.0       0.0       0.0  ...       0.0       0.0   \n",
+       "114538            0.0       0.0       0.0       0.0  ...       0.0       0.0   \n",
+       "1089634           0.0       0.0       0.0       0.0  ...       0.0       0.0   \n",
+       "1399007           0.0       0.0       0.0       0.0  ...       0.0       0.0   \n",
+       "1695789           0.0       0.0       0.0       0.0  ...       0.0       0.0   \n",
+       "\n",
+       "listing_id   6134145   2898226   4573388   14843783  3615760   7086825   \\\n",
+       "reviewer_id                                                               \n",
+       "51538             0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "114538            0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "1089634           0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "1399007           0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "1695789           0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "\n",
+       "listing_id   7880828   2843445   \n",
+       "reviewer_id                      \n",
+       "51538             0.0       0.0  \n",
+       "114538            0.0       0.0  \n",
+       "1089634           0.0       0.0  \n",
+       "1399007           0.0       0.0  \n",
+       "1695789           0.0       0.0  \n",
+       "\n",
+       "[5 rows x 278 columns]"
+      ]
+     },
+     "execution_count": 317,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "# build a null table whose index is users' is and columns are properties' id\n",
+    "df_user_listing = pd.DataFrame(np.zeros((67,278)), index = user_id , columns = listing_id)\n",
+    "df_user_listing.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 318,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th>listing_id</th>\n",
+       "      <th>5729845</th>\n",
+       "      <th>4000384</th>\n",
+       "      <th>6513924</th>\n",
+       "      <th>4331214</th>\n",
+       "      <th>3392423</th>\n",
+       "      <th>3693850</th>\n",
+       "      <th>31796</th>\n",
+       "      <th>1544702</th>\n",
+       "      <th>1391215</th>\n",
+       "      <th>4090224</th>\n",
+       "      <th>...</th>\n",
+       "      <th>7181950</th>\n",
+       "      <th>11223924</th>\n",
+       "      <th>6134145</th>\n",
+       "      <th>2898226</th>\n",
+       "      <th>4573388</th>\n",
+       "      <th>14843783</th>\n",
+       "      <th>3615760</th>\n",
+       "      <th>7086825</th>\n",
+       "      <th>7880828</th>\n",
+       "      <th>2843445</th>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>reviewer_id</th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>51538</th>\n",
+       "      <td>58.385623</td>\n",
+       "      <td>478.422061</td>\n",
+       "      <td>538.146928</td>\n",
+       "      <td>49.615487</td>\n",
+       "      <td>225.045388</td>\n",
+       "      <td>133.642223</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>114538</th>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>6.890452</td>\n",
+       "      <td>44.184787</td>\n",
+       "      <td>53.623242</td>\n",
+       "      <td>213.883931</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1089634</th>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1399007</th>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1695789</th>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "<p>5 rows × 278 columns</p>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "listing_id    5729845     4000384     6513924    4331214     3392423   \\\n",
+       "reviewer_id                                                             \n",
+       "51538        58.385623  478.422061  538.146928  49.615487  225.045388   \n",
+       "114538        0.000000    0.000000    0.000000   0.000000    0.000000   \n",
+       "1089634       0.000000    0.000000    0.000000   0.000000    0.000000   \n",
+       "1399007       0.000000    0.000000    0.000000   0.000000    0.000000   \n",
+       "1695789       0.000000    0.000000    0.000000   0.000000    0.000000   \n",
+       "\n",
+       "listing_id     3693850   31796      1544702    1391215     4090224   ...  \\\n",
+       "reviewer_id                                                          ...   \n",
+       "51538        133.642223  0.000000   0.000000   0.000000    0.000000  ...   \n",
+       "114538         0.000000  6.890452  44.184787  53.623242  213.883931  ...   \n",
+       "1089634        0.000000  0.000000   0.000000   0.000000    0.000000  ...   \n",
+       "1399007        0.000000  0.000000   0.000000   0.000000    0.000000  ...   \n",
+       "1695789        0.000000  0.000000   0.000000   0.000000    0.000000  ...   \n",
+       "\n",
+       "listing_id   7181950   11223924  6134145   2898226   4573388   14843783  \\\n",
+       "reviewer_id                                                               \n",
+       "51538             0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "114538            0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "1089634           0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "1399007           0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "1695789           0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "\n",
+       "listing_id   3615760   7086825   7880828   2843445   \n",
+       "reviewer_id                                          \n",
+       "51538             0.0       0.0       0.0       0.0  \n",
+       "114538            0.0       0.0       0.0       0.0  \n",
+       "1089634           0.0       0.0       0.0       0.0  \n",
+       "1399007           0.0       0.0       0.0       0.0  \n",
+       "1695789           0.0       0.0       0.0       0.0  \n",
+       "\n",
+       "[5 rows x 278 columns]"
+      ]
+     },
+     "execution_count": 318,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "#find out the matched sentiment rate for each pair of (user_id, listing_id) and fill it into the table\n",
+    "columns = 278\n",
+    "rows = 67\n",
+    "\n",
+    "for i in range(0,rows):\n",
+    "\n",
+    "    for j in range(0,columns):\n",
+    "\n",
+    "        f = review_score[(review_score['reviewer_id']== df_user_listing.index[i]) & (review_score['listing_id'] == df_user_listing.columns[j])]\n",
+    "        if  f.shape[0] != 0:\n",
+    "            df_user_listing.iloc[i,j] = f['sentiment_rate'].iloc[0]\n",
+    "\n",
+    "df_user_listing.head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Cosine similarity measures the size of the difference between two individuals by using the cosine value of two vector angles in the vector space. When the cosine value is closer to 1，the two vectors are more similar."
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "</br >\n",
+    "<center>\n",
+    "<img src=\"cosine_similar.png\"width=200/>\n",
+    "</center>"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 319,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "array([[1.       , 0.       , 0.       , ..., 0.       , 0.       ,\n",
+       "        0.       ],\n",
+       "       [0.       , 1.       , 0.       , ..., 0.       , 0.       ,\n",
+       "        0.       ],\n",
+       "       [0.       , 0.       , 1.       , ..., 0.       , 0.       ,\n",
+       "        0.       ],\n",
+       "       ...,\n",
+       "       [0.       , 0.       , 0.       , ..., 1.       , 0.4362887,\n",
+       "        0.       ],\n",
+       "       [0.       , 0.       , 0.       , ..., 0.4362887, 1.       ,\n",
+       "        0.       ],\n",
+       "       [0.       , 0.       , 0.       , ..., 0.       , 0.       ,\n",
+       "        1.       ]])"
+      ]
+     },
+     "execution_count": 319,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "from sklearn.metrics.pairwise import cosine_similarity\n",
+    "user_similarity = cosine_similarity(df_user_listing,dense_output=True)\n",
+    "user_similarity"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 320,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th>reviewer_id</th>\n",
+       "      <th>51538</th>\n",
+       "      <th>114538</th>\n",
+       "      <th>1089634</th>\n",
+       "      <th>1399007</th>\n",
+       "      <th>1695789</th>\n",
+       "      <th>1812574</th>\n",
+       "      <th>1911807</th>\n",
+       "      <th>3230853</th>\n",
+       "      <th>3751402</th>\n",
+       "      <th>4491477</th>\n",
+       "      <th>...</th>\n",
+       "      <th>44445333</th>\n",
+       "      <th>46024609</th>\n",
+       "      <th>46567743</th>\n",
+       "      <th>48896613</th>\n",
+       "      <th>52667131</th>\n",
+       "      <th>56146959</th>\n",
+       "      <th>61606767</th>\n",
+       "      <th>61663856</th>\n",
+       "      <th>63239764</th>\n",
+       "      <th>77129698</th>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>reviewer_id</th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "      <th></th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>51538</th>\n",
+       "      <td>1.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>114538</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.043669</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1089634</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>1.000000</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.070807</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1399007</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>1.0</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1695789</th>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.070807</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>1.000000</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.000000</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>...</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "      <td>0.0</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "<p>5 rows × 67 columns</p>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "reviewer_id  51538     114538    1089634   1399007   1695789   1812574   \\\n",
+       "reviewer_id                                                               \n",
+       "51538             1.0       0.0  0.000000       0.0  0.000000       0.0   \n",
+       "114538            0.0       1.0  0.000000       0.0  0.000000       0.0   \n",
+       "1089634           0.0       0.0  1.000000       0.0  0.070807       0.0   \n",
+       "1399007           0.0       0.0  0.000000       1.0  0.000000       0.0   \n",
+       "1695789           0.0       0.0  0.070807       0.0  1.000000       0.0   \n",
+       "\n",
+       "reviewer_id  1911807   3230853   3751402   4491477   ...  44445333  46024609  \\\n",
+       "reviewer_id                                          ...                       \n",
+       "51538             0.0       0.0  0.000000       0.0  ...       0.0       0.0   \n",
+       "114538            0.0       0.0  0.043669       0.0  ...       0.0       0.0   \n",
+       "1089634           0.0       0.0  0.000000       0.0  ...       0.0       0.0   \n",
+       "1399007           0.0       0.0  0.000000       0.0  ...       0.0       0.0   \n",
+       "1695789           0.0       0.0  0.000000       0.0  ...       0.0       0.0   \n",
+       "\n",
+       "reviewer_id  46567743  48896613  52667131  56146959  61606767  61663856  \\\n",
+       "reviewer_id                                                               \n",
+       "51538             0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "114538            0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "1089634           0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "1399007           0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "1695789           0.0       0.0       0.0       0.0       0.0       0.0   \n",
+       "\n",
+       "reviewer_id  63239764  77129698  \n",
+       "reviewer_id                      \n",
+       "51538             0.0       0.0  \n",
+       "114538            0.0       0.0  \n",
+       "1089634           0.0       0.0  \n",
+       "1399007           0.0       0.0  \n",
+       "1695789           0.0       0.0  \n",
+       "\n",
+       "[5 rows x 67 columns]"
+      ]
+     },
+     "execution_count": 320,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "user_similarity = pd.DataFrame(user_similarity, index = user_id, columns = user_id )\n",
+    "user_similarity.head()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 343,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def find_top5_similar_users(user_id, user_similarity):\n",
+    "    similarity = user_similarity.loc[user_id]\n",
+    "    similarity = similarity.T.sort_values(ascending= False)\n",
+    "    top5 = similarity.iloc[1:6]\n",
+    "    return top5"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 347,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "# use user 51538 as example\n",
+    "# top 5 most similar users\n",
+    "similar_users = find_top5_similar_users(51538,user_similarity).index\n",
+    "\n",
+    "#get the properties id that each similmar user has reivewed and also has positive rate\n",
+    "user_1 = review_score['listing_id'][(review_score['reviewer_id']== similar_users[0])&(review_score['sentiment_rate']>0)].tolist()\n",
+    "user_2 = review_score['listing_id'][(review_score['reviewer_id']== similar_users[1])&(review_score['sentiment_rate']>0)].tolist()\n",
+    "user_3 = review_score['listing_id'][(review_score['reviewer_id']== similar_users[2])&(review_score['sentiment_rate']>0)].tolist()\n",
+    "user_4 = review_score['listing_id'][(review_score['reviewer_id']== similar_users[3])&(review_score['sentiment_rate']>0)].tolist()\n",
+    "user_5 = review_score['listing_id'][(review_score['reviewer_id']== similar_users[4])&(review_score['sentiment_rate']>0)].tolist()\n",
+    "\n",
+    "# get a union of similar users' recommended properties\n",
+    "union = user_1 + user_2 + user_3 + user_4 + user_5"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 350,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/plain": [
+       "6765855     1\n",
+       "3703674     1\n",
+       "2378421     1\n",
+       "7988755     1\n",
+       "6347026     1\n",
+       "7823025     1\n",
+       "1067184     1\n",
+       "12309083    1\n",
+       "8193344     1\n",
+       "4530670     1\n",
+       "11397511    1\n",
+       "4583526     1\n",
+       "1391492     1\n",
+       "750438      1\n",
+       "8067585     1\n",
+       "4223387     1\n",
+       "7956634     1\n",
+       "2564544     1\n",
+       "dtype: int64"
+      ]
+     },
+     "execution_count": 350,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "#get the properties id that inputted user has reivewed\n",
+    "user = review_score['listing_id'][review_score['reviewer_id']== 51538].values\n",
+    "\n",
+    "# get the difference set between the union and inputted user\n",
+    "# contains the properties that inputted user hasn't live and recommended by his similar users\n",
+    "rest = list(set(union).difference(user))\n",
+    "rest = pd.Series(rest)\n",
+    "\n",
+    "# recommended properties's id and recommended times\n",
+    "rest.value_counts().sort_values()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.6.8"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
